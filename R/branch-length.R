@@ -6,15 +6,10 @@
 #' @param from,to igraph vertices (not cell ID)
 #' @rdname branch-length
 #' @export
-mean_branch_length = function(graph, from = numeric(0), to = from) {
-  # TODO: Avoid creating huge matrix
-  m = igraphlite::shortest_paths(graph, from, to, mode = 3L, algorithm = "unweighted")
-  if (length(from)) {
-    nzero = sum(from %in% to)
-  } else {
-    nzero = nrow(m)
-  }
-  sum(m) / (nrow(m) * ncol(m) - nzero)
+mean_branch_length = function(graph, from = igraph::V(graph), to = from) {
+  .d = igraph::distances(graph, from, to, mode = "all", weights = NA, algorithm = "unweighted")
+  .n = length(from) * length(to) - sum(from %in% to)
+  sum(.d) / .n
 }
 
 #' @details
@@ -26,7 +21,7 @@ within_between_samples = function(graph, regions) {
   rows = regions %>%
     tibble::rowid_to_column() %>%
     dplyr::mutate(
-      id = lapply(.data$id, igraphlite::as_vids, graph = graph),
+      id = lapply(.data$id, as_idx, ids = as_ids(igraph::V(graph))),
       within = purrr::map_dbl(.data$id, ~ mean_branch_length(graph, .x))
     ) %>%
     purrr::transpose()

@@ -6,16 +6,15 @@
 #' @rdname graph
 #' @export
 make_igraph = function(population) {
-  as_symbolic_edgelist(population) %>%
-    igraphlite::graph_from_data_frame()
-}
-
-as_symbolic_edgelist = function(population) {
-  is_not_origin = (population[["ancestor"]] > 0L)
-  cbind(
-    population[is_not_origin, "ancestor"],
-    population[is_not_origin, "id"]
-  )
+  population %>%
+    dplyr::transmute(
+      from = .data$ancestor,
+      to = .data$id
+    ) %>%
+    dplyr::filter(.data$from > 0L) %>%
+    dplyr::arrange(.data$to) %>%
+    dplyr::mutate_all(as.character) %>%
+    igraph::graph_from_data_frame()
 }
 
 #' @details
@@ -25,9 +24,12 @@ as_symbolic_edgelist = function(population) {
 #' @rdname graph
 #' @export
 subtree = function(graph, nodes = integer(0L)) {
-  vids = igraphlite::as_vids(graph, nodes)
-  vids = upstream_vertices(graph, vids, to_mrca = TRUE)
-  igraphlite::induced_subgraph(graph, vids)
+  vs = igraph::V(graph)
+  idx = as_idx(nodes, as_ids(vs))
+  idx = igraph::ego(graph, order = 1073741824L, nodes = idx, mode = "in") %>%
+    purrr::flatten_dbl() %>%
+    unique()
+  igraph::induced_subgraph(graph, idx)
 }
 
 #' @details
@@ -43,54 +45,53 @@ internal_nodes = function(graph, nodes, sensitivity) {
   as.integer(names(counts)[(counts / n) > sensitivity])
 }
 
-upstream_vertices = function(graph, vids, to_mrca = TRUE) {
-  vlist = igraphlite::neighborhood(graph, vids, order = 1073741824L, mode = 2L)
-  vids = unique(unlist(vlist, use.names = FALSE))
-  if (to_mrca) {
-    vids = setdiff(vids, Reduce(intersect, vlist)[-1L])
+as_ids = function(vs) {
+  ns = names(vs)
+  if (is.null(ns)) as.vector(vs) else as.integer(ns)
+}
+
+as_idx = function(nodes, ids) {
+  idx = match(nodes, ids)
+  is_na = is.na(idx)
+  if (any(is_na)) {
+    warning("Node not found: ", paste(nodes[is_na], collapse = ", "))
+    idx = idx[!is_na]
   }
-  vids
+  idx
 }
 
 paths_to_sink = function(graph, nodes) {
-  vids = igraphlite::as_vids(graph, nodes)
-  vnames = igraphlite::Vnames(graph)
-  igraphlite::neighborhood(graph, vids, order = 1073741824L, mode = 1L) %>%
-    lapply(function(x) vnames[x])
+  vs = igraph::V(graph)
+  ids = as_ids(vs)
+  idx = as_idx(nodes, ids)
+  igraph::ego(graph, order = 1073741824L, nodes = idx, mode = "out") %>%
+    lapply(function(x) ids[x])
 }
 
 paths_to_source = function(graph, nodes = integer(0L)) {
-  vids = igraphlite::as_vids(graph, nodes)
-  vnames = igraphlite::Vnames(graph)
-  igraphlite::neighborhood(graph, vids, order = 1073741824L, mode = 2L) %>%
-    lapply(function(x) vnames[x])
+  vs = igraph::V(graph)
+  ids = as_ids(vs)
+  idx = as_idx(nodes, ids)
+  igraph::ego(graph, order = 1073741824L, nodes = idx, mode = "in") %>%
+    lapply(function(x) ids[x])
 }
 
 distances_from_origin = function(graph, nodes = integer(0L)) {
-  vids = igraphlite::as_vids(graph, nodes)
-  origin = graph$source
-  igraphlite::shortest_paths(graph, origin, vids, mode = 1L, algorithm = "unweighted") %>%
+  vs = igraph::V(graph)
+  idx = as_idx(nodes, as_ids(vs))
+  igraph::distances(graph, 1, idx, mode = "out", weights = NA, algorithm = "unweighted") %>%
     as.integer()
 }
 
-sink_nodes = function(graph) {
-  igraphlite::Vnames(graph)[graph$is_sink]
-}
-
-sinks = function(graph, nodes) {
-  .sink = sink_nodes(graph)
-  paths = paths_to_sink(graph, nodes)
-  lapply(paths, function(x) x[x %in% .sink])
-}
-
-# NOTE: (vcount + 1) / 2 cannot be used if death rate > 0
+# NOTE: sink vertices can be dead cells
 count_sink = function(graph, nodes = integer(0L)) {
+  vs = igraph::V(graph)
   if (length(nodes) > 0L) {
-    vids = igraphlite::as_vids(graph, nodes)
-    egos = igraphlite::neighborhood(graph, vids, order = 1073741824L, mode = 1L)
-    sink = graph$sink
-    vapply(egos, function(x) sum(x %in% sink), integer(1L), USE.NAMES = FALSE)
+    idx = as_idx(nodes, as_ids(vs))
+    out_ego_size = igraph::ego_size(graph, order = 1073741824L, nodes = idx, mode = "out")
+    as.integer(out_ego_size + 1L) %/% 2L
   } else {
-    sum(graph$is_sink)
+    outdegree = igraph::degree(graph, vs, mode = "out", loops = FALSE)
+    sum(outdegree == 0L)
   }
 }

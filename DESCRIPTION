@@ -11,7 +11,7 @@ Depends:
 Imports:
     dplyr (>= 0.8.3),
     ggplot2 (>= 3.2.0),
-    igraphlite,
+    igraph (>= 1.1.2),
     jsonlite (>= 1.6),
     magrittr,
     mmand,
@@ -30,8 +30,6 @@ Suggests:
     rgl,
     rmarkdown,
     testthat (>= 2.1.0)
-Remotes:
-    github::heavywatal/rigraphlite
 URL: https://github.com/heavywatal/rtumopp
 BugReports: https://github.com/heavywatal/rtumopp/issues
 RoxygenNote: 6.1.1
